@@ -204,7 +204,7 @@ else:
                 mot = st.text_area("Se 'Não', relate o motivo:") if p_a == "Não" else ""
                 pl = st.text_area("Atividades Planejadas")
                 re = st.text_area("Atividades Realizadas")
-                pn = st.multiselect("Nível de Participação:", ["REALIZOU COM AUTONOMIA", "REALIZOU COM APOIO E INTERVENÇÃO DE UM ADULTO", "REALIZOU WITH APOIO DE UM COLEGA", "NÃO REALIZOU"])
+                pn = st.multiselect("Nível de Participação:", ["REALIZOU COM AUTONOMIA", "REALIZOU COM APOIO E INTERVENÇÃO DE UM ADULTO", "REALIZOU COM APOIO DE UM COLEGA", "NÃO REALIZOU"])
                 ft = st.file_uploader("Anexar foto")
                 
                 if st.button("Salvar Registro"):
@@ -251,4 +251,5 @@ else:
                 logs_res = supabase.table("logs").select("*").order("id", desc=True).limit(50).execute()
                 if logs_res.data:
                     logs_df = pd.DataFrame(logs_res.data).merge(df_prof[['rf', 'professor']], on='rf', how='left')
+
                     st.dataframe(logs_df[['data_hora', 'professor', 'rf']], use_container_width=True)
