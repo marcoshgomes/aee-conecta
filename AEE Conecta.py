@@ -12,11 +12,18 @@ from io import BytesIO
 from datetime import datetime
 from PIL import Image
 
-# --- 1. CONFIGURAÇÃO E PROTEÇÃO ANTI-TRADUTOR ---
-st.set_page_config(page_title="AEE Conecta", layout="centered", page_icon="💠")
+# --- 1. CONFIGURAÇÃO COM ÍCONE DE INSTALAÇÃO ---
+# Essa linha garante que o navegador veja o logo.png como o ícone da aba e do app
+st.set_page_config(page_title="AEE Conecta", layout="centered", page_icon="logo.png")
+
+# O código abaixo blinda o site contra o tradutor e reforça o ícone para o celular (PWA)
 st.markdown(
     """
-    <head><meta name="google" content="notranslate"></head>
+    <head>
+        <meta name="google" content="notranslate">
+        <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/marcoshgomes/aee-conecta/main/logo.png">
+        <link rel="icon" href="https://raw.githubusercontent.com/marcoshgomes/aee-conecta/main/logo.png">
+    </head>
     <script>
         document.documentElement.lang = 'pt-br';
         document.documentElement.classList.add('notranslate');
@@ -330,4 +337,5 @@ else:
                                 supabase.table("credenciais").delete().neq("rf", "xxx").execute()
                                 supabase.table("estudantes").delete().neq("registro", "xxx").execute()
                                 supabase.table("professores").delete().neq("rf", "xxx").execute()
+
                                 st.error("Resetado!"); time.sleep(2); st.session_state.logged_in = False; st.rerun()
