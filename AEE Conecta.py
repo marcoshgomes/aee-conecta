@@ -235,7 +235,7 @@ else:
                 dt = st.date_input("Data", datetime.now()); bm = st.selectbox("Bimestre", ["1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre"])
                 tm = st.text_input("Disciplina ou Tema"); p_a = st.radio("Participou?", ["Sim", "Não"], horizontal=True)
                 mot = st.text_area("Se 'Não', motivo:") if p_a == "Não" else ""; pl = st.text_area("Planejado"); re = st.text_area("Realizado")
-                pn = st.multiselect("Nível:", ["REALIZOU COM AUTONOMIA", "REALIZOU COM APOIO E INTERVENÇÃO DE UM ADULTO", "REALIZOU WITH APOIO DE UM COLEGA", "NÃO REALIZOU"])
+                pn = st.multiselect("Nível:", ["REALIZOU COM AUTONOMIA", "REALIZOU COM APOIO E INTERVENÇÃO DE UM ADULTO", "REALIZOU COM APOIO DE UM COLEGA", "NÃO REALIZOU"])
                 ft = st.file_uploader("Foto opcional")
                 if st.button("Salvar Relatório"):
                     p_f = ""
