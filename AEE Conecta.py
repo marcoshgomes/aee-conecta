@@ -354,6 +354,16 @@ else:
                         time.sleep(1)
                         st.rerun()
 
+                    if modo_a == "Editar/Excluir" and c2.form_submit_button("❌ EXCLUIR ALUNO"):
+                        if al_edit['foto_path']: 
+                            supabase.storage.from_("fotos_perfil").remove([al_edit['foto_path']])
+                        supabase.table("estudantes").delete().eq("registro", al_edit['registro']).execute()
+                        
+                        st.toast("⚠️ Aluno removido!")
+                        st.session_state.al_form_id += 1
+                        time.sleep(1)
+                        st.rerun()
+
             with abas[2]: # GESTÃO DE PROFESSORES
                 st.subheader("Gerenciar Usuários")
                 if "p_form_id" not in st.session_state: st.session_state.p_form_id = 0
