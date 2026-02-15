@@ -224,26 +224,38 @@ else:
     # --- LANÇAR RELATÓRIO ---
     elif menu == "Lançar Relatório":
         st.header("📝 Lançar Relatório de Aula")
-        if "form_id" not in st.session_state: st.session_state.form_id = 0
-        lista_est = ["Selecione o Estudante..."] + sorted(df_alunos['aluno'].tolist()) if not df_alunos.empty else ["Aguardando cadastro..."]
-        al_sel = st.selectbox("Escolha o aluno:", lista_est, key=f"sel_{st.session_state.form_id}")
+        if df_alunos.empty: st.warning("Aguardando cadastro de alunos.")
+        else:
+            if "form_id" not in st.session_state: st.session_state.form_id = 0
+            
+            # --- INÍCIO DA CORREÇÃO ---
+            # Criamos a coluna de exibição Nome - Turma
+            df_alunos['exibicao'] = df_alunos['aluno'] + " - " + df_alunos['turma']
+            lista_est = ["Selecione o Estudante..."] + sorted(df_alunos['exibicao'].tolist())
+            
+            # O seletor usa a coluna 'exibicao'
+            al_sel_visual = st.selectbox("Escolha o aluno:", lista_est, key=f"sel_{st.session_state.form_id}")
 
-        if al_sel != "Selecione o Estudante..." and not df_alunos.empty:
-            al_inf = df_alunos[df_alunos['aluno'] == al_sel].iloc[0]
-            with st.container(border=True):
-                st.subheader(f"Aluno: {al_sel}")
-                dt = st.date_input("Data", datetime.now()); bm = st.selectbox("Bimestre", ["1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre"])
-                tm = st.text_input("Disciplina ou Tema"); p_a = st.radio("Participou?", ["Sim", "Não"], horizontal=True)
-                mot = st.text_area("Se 'Não', motivo:") if p_a == "Não" else ""; pl = st.text_area("Planejado"); re = st.text_area("Realizado")
-                pn = st.multiselect("Nível:", ["REALIZOU COM AUTONOMIA", "REALIZOU COM APOIO E INTERVENÇÃO DE UM ADULTO", "REALIZOU COM APOIO DE UM COLEGA", "NÃO REALIZOU"])
-                ft = st.file_uploader("Foto opcional")
-                if st.button("Salvar Relatório"):
-                    p_f = ""
-                    if ft:
-                        p_f = f"aula_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-                        supabase.storage.from_("fotos_aee").upload(p_f, ft.getvalue())
-                    supabase.table("relatorios").insert({"data": dt.strftime('%d/%m/%Y'), "rf_professor": st.session_state.u_rf, "registro_aluno": str(al_inf['registro']), "bimestre": bm, "participou_aula": p_a, "motivo_nao_participou": mot, "disciplina_tema": tm, "planejado": pl, "realizado": re, "participacao": ", ".join(pn), "foto_path": p_f}).execute()
-                    st.toast("✅ Relatório salvo!"); time.sleep(1.5); st.session_state.form_id += 1; st.rerun()
+            if al_sel_visual != "Selecione o Estudante...":
+                # Extraímos o nome puro antes do " - " para buscar os dados no banco
+                nome_puro = al_sel_visual.split(" - ")[0]
+                al_inf = df_alunos[df_alunos['aluno'] == nome_puro].iloc[0]
+                # --- FIM DA CORREÇÃO ---
+                
+                with st.container(border=True):
+                    st.subheader(f"Aluno: {nome_puro}")
+                    dt = st.date_input("Data", datetime.now()); bm = st.selectbox("Bimestre", ["1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre"])
+                    tm = st.text_input("Disciplina ou Tema"); p_a = st.radio("Participou?", ["Sim", "Não"], horizontal=True)
+                    mot = st.text_area("Se 'Não', motivo:") if p_a == "Não" else ""; pl = st.text_area("Atividades Planejadas"); re = st.text_area("Atividades Realizadas")
+                    pn = st.multiselect("Nível:", ["REALIZOU COM AUTONOMIA", "APOIO ADULTO", "APOIO COLEGA", "NÃO REALIZOU"])
+                    ft = st.file_uploader("Foto opcional")
+                    if st.button("Salvar Relatório"):
+                        p_f = ""
+                        if ft:
+                            p_f = f"aula_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+                            supabase.storage.from_("fotos_aee").upload(p_f, ft.getvalue())
+                        supabase.table("relatorios").insert({"data": dt.strftime('%d/%m/%Y'), "rf_professor": st.session_state.u_rf, "registro_aluno": str(al_inf['registro']), "bimestre": bm, "participou_aula": p_a, "motivo_nao_participou": mot, "disciplina_tema": tm, "planejado": pl, "realizado": re, "participacao": ", ".join(pn), "foto_path": p_f}).execute()
+                        st.toast("✅ Relatório salvo!"); time.sleep(1.5); st.session_state.form_id += 1; st.rerun()
 
     # --- PAINEL DE DOCUMENTOS ---
     elif menu == "Painel de Documentos":
@@ -253,19 +265,32 @@ else:
             list_tabs += ["👤 Gestão de Alunos", "👥 Gestão de Professores", "🔒 Segurança e Monitoramento"]
         abas = st.tabs(list_tabs)
         
-        with abas[0]: # DOCUMENTOS
-            al_f = st.selectbox("Selecione o Aluno", sorted(df_alunos['aluno'].tolist()) if not df_alunos.empty else ["Vazio"], key="g_sel")
-            if not df_alunos.empty:
-                d_f = df_alunos[df_alunos['aluno'] == al_f].iloc[0]
+        with abas[0]: # ABA DOCUMENTOS
+            if df_alunos.empty: st.info("Sem alunos cadastrados.")
+            else:
+                # --- INÍCIO DA CORREÇÃO ---
+                df_alunos['exibicao'] = df_alunos['aluno'] + " - " + df_alunos['turma']
+                al_f_visual = st.selectbox("Selecione o Aluno", sorted(df_alunos['exibicao'].tolist()), key="gest_sel")
+                
+                # Pega o nome puro para não dar erro de NameError nas variáveis abaixo
+                al_f_nome = al_f_visual.split(" - ")[0]
+                d_f = df_alunos[df_alunos['aluno'] == al_f_nome].iloc[0]
+                
                 c1, c2 = st.columns(2)
-                c1.download_button("📥 Baixar Folha de Rosto", gerar_folha_rosto(d_f), f"Rosto_{al_f}.docx")
+                # Aqui usamos al_f_nome para o nome do arquivo .docx
+                c1.download_button("📥 Baixar Folha de Rosto", gerar_folha_rosto(d_f), f"Rosto_{al_f_nome}.docx")
+                # --- FIM DA CORREÇÃO ---
+                
                 query = supabase.table("relatorios").select("*").eq("registro_aluno", str(d_f['registro']))
                 if st.session_state.u_perfil not in super_perfis: query = query.eq("rf_professor", st.session_state.u_rf)
                 res_rels = query.execute(); df_res = pd.DataFrame(res_rels.data)
                 if not df_res.empty:
                     bim_f = st.selectbox("Filtrar por Bimestre", ["Todos", "1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre"])
                     if bim_f != "Todos": df_res = df_res[df_res['bimestre'] == bim_f]
-                    if not df_res.empty: c2.download_button(f"📥 Baixar Relatórios", gerar_relatorio_aula(df_res, al_f, d_f['turma'], df_prof), f"Relatos_{al_f}.docx")
+                    if not df_res.empty: 
+                        # Corrigido o download usando o nome puro
+                        c2.download_button(f"📥 Baixar Relatórios ({len(df_res)})", gerar_relatorio_aula(df_res, al_f_nome, d_f['turma'], df_prof), f"Relatorios_{al_f_nome}.docx")
+                else: st.warning("Sem relatórios sob sua responsabilidade para este aluno.")
 
         if st.session_state.u_perfil in super_perfis:
             with abas[1]: # GESTÃO DE ALUNOS
