@@ -293,31 +293,66 @@ else:
                 else: st.warning("Sem relatórios sob sua responsabilidade para este aluno.")
 
         if st.session_state.u_perfil in super_perfis:
-            with abas[1]: # GESTÃO DE ALUNOS
-                st.subheader("Cadastro de Alunos")
-                modo_a = st.radio("Ação Estudante:", ["Novo", "Editar/Excluir"], horizontal=True)
-                al_edit = df_alunos[df_alunos['aluno'] == st.selectbox("Escolha:", sorted(df_alunos['aluno'].tolist()))].iloc[0] if (modo_a == "Editar/Excluir" and not df_alunos.empty) else None
-                with st.form("f_al"):
-                    reg = st.text_input("Registro", value=al_edit['registro'] if al_edit is not None else "")
-                    nom = st.text_input("Nome", value=al_edit['aluno'] if al_edit is not None else "")
+            with abas[1]: # ABA GESTÃO DE ALUNOS
+                st.subheader("Gestão de Alunos")
+                
+                # --- NOVO: Controle de reset para limpar a tela ---
+                if "al_form_id" not in st.session_state: 
+                    st.session_state.al_form_id = 0
+                
+                # A key dinâmica no radio e no form garante a limpeza total
+                modo_a = st.radio("Ação Estudante:", ["Novo", "Editar/Excluir"], horizontal=True, key=f"modo_al_{st.session_state.al_form_id}")
+                
+                al_edit = None
+                if modo_a == "Editar/Excluir" and not df_alunos.empty:
+                    # Aqui também usamos o Nome + Turma para facilitar a vida da PAEE
+                    df_alunos['exibicao_gestao'] = df_alunos['aluno'] + " - " + df_alunos['turma']
+                    sel_a_visual = st.selectbox("Escolha o aluno para carregar os dados:", sorted(df_alunos['exibicao_gestao'].tolist()), key=f"sel_edit_al_{st.session_state.al_form_id}")
+                    nome_puro_edit = sel_a_visual.split(" - ")[0]
+                    al_edit = df_alunos[df_alunos['aluno'] == nome_puro_edit].iloc[0]
+                
+                # O formulário ganha uma key que muda a cada salvamento
+                with st.form(key=f"f_aluno_{st.session_state.al_form_id}"):
+                    reg = st.text_input("Registro (ID)", value=al_edit['registro'] if al_edit is not None else "")
+                    nom = st.text_input("Nome Completo", value=al_edit['aluno'] if al_edit is not None else "")
                     tur = st.text_input("Turma", value=al_edit['turma'] if al_edit is not None else "")
-                    nec = st.text_area("Condição", value=al_edit['necessidades'] if al_edit is not None else "")
-                    nas = st.text_input("Nascimento", value=al_edit['data_nascimento'] if al_edit is not None else "")
+                    nec = st.text_area("Condição/Deficiência", value=al_edit['necessidades'] if al_edit is not None else "")
+                    nas = st.text_input("Nascimento (DD/MM/AAAA)", value=al_edit['data_nascimento'] if al_edit is not None else "")
                     obs = st.text_area("Observações Perfil", value=al_edit['observacoes_gerais'] if al_edit is not None else "")
-                    ft_p = st.file_uploader("Foto Perfil")
+                    ft_p = st.file_uploader("Foto Perfil", type=['png', 'jpg', 'jpeg'])
+                    
                     c1, c2 = st.columns(2)
-                    if c1.form_submit_button("Salvar Perfil"):
+                    
+                    if c1.form_submit_button("💾 Salvar Perfil"):
                         if modo_a == "Novo" and not df_alunos[df_alunos['registro'] == reg].empty:
-                            st.error("Este Registro já existe!"); st.stop()
+                            st.error("⚠️ Este Registro já existe!"); st.stop()
+                        
                         p_path = al_edit['foto_path'] if al_edit is not None else ""
                         if ft_p:
                             p_path = f"perfil_{reg}.png"
                             supabase.storage.from_("fotos_perfil").upload(p_path, ft_p.getvalue(), {"upsert": "true"})
-                        supabase.table("estudantes").upsert({"registro": reg, "aluno": nom, "turma": tur, "necessidades": nec, "data_nascimento": nas, "observacoes_gerais": obs, "foto_path": p_path}).execute()
-                        st.success("Salvo!"); time.sleep(1); st.rerun()
+                        
+                        supabase.table("estudantes").upsert({
+                            "registro": reg, "aluno": nom, "turma": tur, 
+                            "necessidades": nec, "data_nascimento": nas, 
+                            "observacoes_gerais": obs, "foto_path": p_path
+                        }).execute()
+                        
+                        st.toast("✅ Perfil salvo com sucesso!")
+                        # --- O PULO DO GATO: Incrementa o ID e reinicia ---
+                        st.session_state.al_form_id += 1
+                        time.sleep(1)
+                        st.rerun()
+
                     if modo_a == "Editar/Excluir" and c2.form_submit_button("❌ EXCLUIR ALUNO"):
-                        if al_edit['foto_path']: supabase.storage.from_("fotos_perfil").remove([al_edit['foto_path']])
-                        supabase.table("estudantes").delete().eq("registro", al_edit['registro']).execute(); st.rerun()
+                        if al_edit['foto_path']: 
+                            supabase.storage.from_("fotos_perfil").remove([al_edit['foto_path']])
+                        supabase.table("estudantes").delete().eq("registro", al_edit['registro']).execute()
+                        
+                        st.toast("⚠️ Aluno removido!")
+                        st.session_state.al_form_id += 1
+                        time.sleep(1)
+                        st.rerun()
 
             with abas[2]: # GESTÃO DE PROFESSORES
                 st.subheader("Gerenciar Usuários")
