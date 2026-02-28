@@ -224,207 +224,279 @@ else:
     # --- LANÇAR RELATÓRIO ---
     elif menu == "Lançar Relatório":
         st.header("📝 Lançar Relatório de Aula")
-        if df_alunos.empty: st.warning("Aguardando cadastro de alunos.")
+        
+        # Inicialização da memória de replicação
+        if "tema_val" not in st.session_state: st.session_state.tema_val = ""
+        if "plan_val" not in st.session_state: st.session_state.plan_val = ""
+        if "form_reset_key" not in st.session_state: st.session_state.form_reset_key = 0
+
+        if df_alunos.empty:
+            st.warning("Aguardando cadastro de alunos pela Gestão/PAEE.")
         else:
-            if "form_id" not in st.session_state: st.session_state.form_id = 0
+            # 1. FILTRO POR TURMA
+            lista_turmas = ["Todas"] + sorted(df_alunos['turma'].unique().tolist())
+            turma_sel = st.selectbox("1. Filtrar por Turma:", lista_turmas)
             
-            # --- INÍCIO DA CORREÇÃO ---
-            # Criamos a coluna de exibição Nome - Turma
-            df_alunos['exibicao'] = df_alunos['aluno'] + " - " + df_alunos['turma']
-            lista_est = ["Selecione o Estudante..."] + sorted(df_alunos['exibicao'].tolist())
+            df_f = df_alunos[df_alunos['turma'] == turma_sel].copy() if turma_sel != "Todas" else df_alunos.copy()
+            df_f['exibicao'] = df_f['aluno'] + " - " + df_f['turma']
             
-            # O seletor usa a coluna 'exibicao'
-            al_sel_visual = st.selectbox("Escolha o aluno:", lista_est, key=f"sel_{st.session_state.form_id}")
+            # 2. SELEÇÃO DO ESTUDANTE
+            lista_est = ["Selecione o Estudante..."] + sorted(df_f['exibicao'].tolist())
+            al_sel_visual = st.selectbox("2. Escolha o aluno:", lista_est, key=f"al_sel_{st.session_state.form_reset_key}")
 
             if al_sel_visual != "Selecione o Estudante...":
-                # Extraímos o nome puro antes do " - " para buscar os dados no banco
                 nome_puro = al_sel_visual.split(" - ")[0]
                 al_inf = df_alunos[df_alunos['aluno'] == nome_puro].iloc[0]
-                # --- FIM DA CORREÇÃO ---
                 
                 with st.container(border=True):
-                    st.subheader(f"Aluno: {nome_puro}")
-                    dt = st.date_input("Data", datetime.now()); bm = st.selectbox("Bimestre", ["1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre"])
-                    tm = st.text_input("Disciplina ou Tema"); p_a = st.radio("Participou?", ["Sim", "Não"], horizontal=True)
-                    mot = st.text_area("Se 'Não', motivo:") if p_a == "Não" else ""; pl = st.text_area("Atividades Planejadas"); re = st.text_area("Atividades Realizadas")
-                    pn = st.multiselect("Nível:", ["REALIZOU COM AUTONOMIA", "APOIO ADULTO", "APOIO COLEGA", "NÃO REALIZOU"])
-                    ft = st.file_uploader("Foto opcional")
-                    if st.button("Salvar Relatório"):
-                        p_f = ""
-                        if ft:
-                            p_f = f"aula_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-                            supabase.storage.from_("fotos_aee").upload(p_f, ft.getvalue())
-                        supabase.table("relatorios").insert({"data": dt.strftime('%d/%m/%Y'), "rf_professor": st.session_state.u_rf, "registro_aluno": str(al_inf['registro']), "bimestre": bm, "participou_aula": p_a, "motivo_nao_participou": mot, "disciplina_tema": tm, "planejado": pl, "realizado": re, "participacao": ", ".join(pn), "foto_path": p_f}).execute()
-                        st.toast("✅ Relatório salvo!"); time.sleep(1.5); st.session_state.form_id += 1; st.rerun()
+                    # --- NOVO: IDENTIFICAÇÃO VISUAL DO ALUNO ---
+                    col_foto, col_info = st.columns([1, 4])
+                    
+                    with col_foto:
+                        if al_inf.get('foto_path'):
+                            try:
+                                # Busca a foto oficial do perfil (fotos_perfil)
+                                res_foto = supabase.storage.from_("fotos_perfil").download(al_inf['foto_path'])
+                                st.image(BytesIO(res_foto), width=100) # Tamanho pequeno mas visível
+                            except:
+                                st.write("🖼️ (Erro na foto)")
+                        else:
+                            st.write("🖼️ (Sem foto)")
+                    
+                    with col_info:
+                        st.subheader(nome_puro)
+                        st.write(f"**Turma:** {al_inf['turma']} | **Registro:** {al_inf['registro']}")
+                        st.caption(f"**Condição:** {al_inf['necessidades']}")
+                    
+                    st.divider()
+                    
+                    # --- DADOS DA AULA ---
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        dt = st.date_input("Data da Atividade", datetime.now())
+                    with col2:
+                        bm = st.selectbox("Bimestre", ["1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre"])
+                    
+                    tm = st.text_input("Disciplina ou Tema da Aula", value=st.session_state.tema_val)
+                    pl = st.text_area("Atividades Planejadas", value=st.session_state.plan_val)
+                    
+                    st.divider()
+                    st.subheader("📝 Parecer Individual")
+                    
+                    p_a = st.radio("O estudante participou?", ["Sim", "Não"], horizontal=True, key=f"pa_{st.session_state.form_reset_key}")
+                    
+                    if p_a == "Não":
+                        mot = st.text_area("Relate o motivo da não participação:", key=f"mot_{st.session_state.form_reset_key}")
+                        re = ""
+                        pn = []
+                    else:
+                        mot = ""
+                        re = st.text_area("Atividades Realizadas (Desempenho individual)", key=f"re_{st.session_state.form_reset_key}")
+                        pn = st.multiselect("Nível de Participação:", 
+                                           ["REALIZOU COM AUTONOMIA", "APOIO ADULTO", "APOIO COLEGA", "NÃO REALIZOU"],
+                                           key=f"pn_{st.session_state.form_reset_key}")
+                    
+                    ft = st.file_uploader("Anexar foto do registro diário", type=['png', 'jpg', 'jpeg'], key=f"ft_{st.session_state.form_reset_key}")
+                    
+                    st.divider()
+                    replicar = st.checkbox("Manter 'Tema' e 'Planejado' para o próximo registro?", value=True)
+
+                    if st.button("💾 Salvar Relatório Individual"):
+                        if not tm or not pl:
+                            st.error("Preencha o Tema e o Planejamento.")
+                        else:
+                            p_f = ""
+                            if ft:
+                                p_f = f"aula_{datetime.now().strftime('%Y%m%d%H%M%S')}_{al_inf['registro']}.png"
+                                supabase.storage.from_("fotos_aee").upload(p_f, ft.getvalue())
+                            
+                            supabase.table("relatorios").insert({
+                                "data": dt.strftime('%d/%m/%Y'), "rf_professor": st.session_state.u_rf, 
+                                "registro_aluno": str(al_inf['registro']), "bimestre": bm, "participou_aula": p_a, 
+                                "motivo_nao_participou": mot, "disciplina_tema": tm, "planejado": pl, 
+                                "realizado": re, "participacao": ", ".join(pn), "foto_path": p_f
+                            }).execute()
+                            
+                            if replicar:
+                                st.session_state.tema_val, st.session_state.plan_val = tm, pl
+                            else:
+                                st.session_state.tema_val, st.session_state.plan_val = "", ""
+                            
+                            st.toast(f"✅ Registro de {nome_puro} salvo!")
+                            time.sleep(1)
+                            st.session_state.form_reset_key += 1
+                            st.rerun()
 
     # --- PAINEL DE DOCUMENTOS ---
     elif menu == "Painel de Documentos":
         st.title("📂 Painel de Documentos")
-        list_tabs = ["📄 Documentos"]
-        if st.session_state.u_perfil in super_perfis: 
-            list_tabs += ["👤 Gestão de Alunos", "👥 Gestão de Professores", "🔒 Segurança e Monitoramento"]
-        abas = st.tabs(list_tabs)
+        super_perfis = ["gestao", "gestor", "paee", "direcao", "coordenador"]
         
-        with abas[0]: # ABA DOCUMENTOS
-            if df_alunos.empty: st.info("Sem alunos cadastrados.")
+        # 1. Definição Dinâmica das Abas (Professor agora vê 'Meus Registros')
+        list_tabs = ["📄 Documentos", "✏️ Alterar ou Excluir"]
+        if st.session_state.u_perfil in super_perfis:
+            list_tabs += ["👤 Gestão de Alunos", "👥 Gestão de Professores", "🔒 Segurança e Reset"]
+        
+        abas = st.tabs(list_tabs)
+
+        # --- ABA 0: DOWNLOAD DE DOCUMENTOS (Impressão) ---
+        with abas[0]:
+            if df_alunos.empty:
+                st.info("Nenhum aluno cadastrado no sistema.")
             else:
-                # --- INÍCIO DA CORREÇÃO ---
-                df_alunos['exibicao'] = df_alunos['aluno'] + " - " + df_alunos['turma']
-                al_f_visual = st.selectbox("Selecione o Aluno", sorted(df_alunos['exibicao'].tolist()), key="gest_sel")
-                
-                # Pega o nome puro para não dar erro de NameError nas variáveis abaixo
-                al_f_nome = al_f_visual.split(" - ")[0]
+                df_alunos['exibicao_imp'] = df_alunos['aluno'] + " - " + df_alunos['turma']
+                al_f_v = st.selectbox("Selecione o Aluno para Documentos:", sorted(df_alunos['exibicao_imp'].tolist()), key="sel_doc_imp")
+                al_f_nome = al_f_v.split(" - ")[0]
                 d_f = df_alunos[df_alunos['aluno'] == al_f_nome].iloc[0]
                 
                 c1, c2 = st.columns(2)
-                # Aqui usamos al_f_nome para o nome do arquivo .docx
                 c1.download_button("📥 Baixar Folha de Rosto", gerar_folha_rosto(d_f), f"Rosto_{al_f_nome}.docx")
-                # --- FIM DA CORREÇÃO ---
                 
+                # Regra de Visualização: Gestão vê tudo, Professor só vê o dele
                 query = supabase.table("relatorios").select("*").eq("registro_aluno", str(d_f['registro']))
-                if st.session_state.u_perfil not in super_perfis: query = query.eq("rf_professor", st.session_state.u_rf)
-                res_rels = query.execute(); df_res = pd.DataFrame(res_rels.data)
+                if st.session_state.u_perfil not in super_perfis:
+                    query = query.eq("rf_professor", st.session_state.u_rf)
+                
+                res = query.execute()
+                df_res = pd.DataFrame(res.data)
+                
                 if not df_res.empty:
-                    bim_f = st.selectbox("Filtrar por Bimestre", ["Todos", "1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre"])
+                    bim_f = st.selectbox("Filtrar Bimestre para Impressão:", ["Todos", "1º Bimestre", "2º Bimestre", "3º Bimestre", "4º Bimestre"])
                     if bim_f != "Todos": df_res = df_res[df_res['bimestre'] == bim_f]
-                    if not df_res.empty: 
-                        # Corrigido o download usando o nome puro
-                        c2.download_button(f"📥 Baixar Relatórios ({len(df_res)})", gerar_relatorio_aula(df_res, al_f_nome, d_f['turma'], df_prof), f"Relatorios_{al_f_nome}.docx")
-                else: st.warning("Sem relatórios sob sua responsabilidade para este aluno.")
+                    if not df_res.empty:
+                        c2.download_button(f"📥 Baixar Relatórios ({len(df_res)})", gerar_relatorio_aula(df_res, al_f_nome, d_f['turma'], df_prof), f"Relatos_{al_f_nome}.docx")
+                else:
+                    st.warning("Sem relatórios disponíveis para impressão conforme seu perfil.")
 
+        # --- ABA 1: ALTERAR OU EXCLUIR (NOVA FUNCIONALIDADE) ---
+        with abas[1]:
+            st.subheader("Gerenciar Meus Registros")
+            st.write("Aqui você pode corrigir erros ou excluir aulas lançadas por você.")
+            
+            al_ed_v = st.selectbox("Selecione o Aluno para ver seus relatórios:", ["Selecione..."] + sorted(df_alunos['exibicao_imp'].tolist()), key="sel_edit_rel")
+            
+            if al_ed_v != "Selecione...":
+                nome_p_ed = al_ed_v.split(" - ")[0]
+                al_inf_ed = df_alunos[df_alunos['aluno'] == nome_p_ed].iloc[0]
+                
+                # Busca relatórios que o usuário logado PODE editar
+                q_ed = supabase.table("relatorios").select("*").eq("registro_aluno", str(al_inf_ed['registro']))
+                if st.session_state.u_perfil not in super_perfis:
+                    q_ed = q_ed.eq("rf_professor", st.session_state.u_rf)
+                
+                df_ed = pd.DataFrame(q_ed.execute().data)
+                
+                if df_ed.empty:
+                    st.info("Nenhum registro seu encontrado para este aluno.")
+                else:
+                    df_ed['label'] = df_ed['data'] + " - " + df_ed['disciplina_tema']
+                    rel_sel_label = st.selectbox("Escolha o registro para alterar:", df_ed['label'].tolist())
+                    rel_data = df_ed[df_ed['label'] == rel_sel_label].iloc[0]
+                    
+                    with st.form("form_correcao_aula"):
+                        st.warning(f"Modo Edição: Aula de {rel_data['data']}")
+                        new_tm = st.text_input("Tema/Disciplina", value=rel_data['disciplina_tema'])
+                        new_pl = st.text_area("Atividades Planejadas", value=rel_data['planejado'])
+                        new_re = st.text_area("Atividades Realizadas", value=rel_data['realizado'])
+                        new_pa = st.radio("Participou?", ["Sim", "Não"], index=0 if rel_data['participou_aula'] == "Sim" else 1)
+                        new_pn = st.multiselect("Nível:", ["REALIZOU COM AUTONOMIA", "APOIO ADULTO", "APOIO COLEGA", "NÃO REALIZOU"], default=str(rel_data['participacao']).split(", "))
+                        new_ft = st.file_uploader("Substituir foto (opcional)")
+                        
+                        b1, b2 = st.columns(2)
+                        if b1.form_submit_button("💾 Salvar Alterações"):
+                            p_f_update = rel_data['foto_path']
+                            if new_ft:
+                                p_f_update = f"aula_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+                                supabase.storage.from_("fotos_aee").upload(p_f_update, new_ft.getvalue())
+                            
+                            supabase.table("relatorios").update({
+                                "disciplina_tema": new_tm, "planejado": new_pl, "realizado": new_re,
+                                "participou_aula": new_pa, "participacao": ", ".join(new_pn), "foto_path": p_f_update
+                            }).eq("id", rel_data['id']).execute()
+                            st.toast("✅ Registro atualizado!"); time.sleep(1); st.rerun()
+                            
+                        if b2.form_submit_button("❌ EXCLUIR DEFINITIVAMENTE"):
+                            if rel_data['foto_path']:
+                                try: supabase.storage.from_("fotos_aee").remove([rel_data['foto_path']])
+                                except: pass
+                            supabase.table("relatorios").delete().eq("id", rel_data['id']).execute()
+                            st.toast("⚠️ Registro removido!"); time.sleep(1); st.rerun()
+
+        # --- ABAS DE GESTÃO (SÓ APARECEM PARA SUPER_PERFIS) ---
         if st.session_state.u_perfil in super_perfis:
-            with abas[1]: # ABA GESTÃO DE ALUNOS
+            with abas[2]: # GESTÃO DE ALUNOS
                 st.subheader("Gestão de Alunos")
-                
-                # --- NOVO: Controle de reset para limpar a tela ---
-                if "al_form_id" not in st.session_state: 
-                    st.session_state.al_form_id = 0
-                
-                # A key dinâmica no radio e no form garante a limpeza total
-                modo_a = st.radio("Ação Estudante:", ["Novo", "Editar/Excluir"], horizontal=True, key=f"modo_al_{st.session_state.al_form_id}")
-                
+                if "al_form_id" not in st.session_state: st.session_state.al_form_id = 0
+                modo_a = st.radio("Ação Estudante:", ["Novo", "Editar/Excluir"], horizontal=True, key=f"ma_{st.session_state.al_form_id}")
                 al_edit = None
                 if modo_a == "Editar/Excluir" and not df_alunos.empty:
-                    # Aqui também usamos o Nome + Turma para facilitar a vida da PAEE
-                    df_alunos['exibicao_gestao'] = df_alunos['aluno'] + " - " + df_alunos['turma']
-                    sel_a_visual = st.selectbox("Escolha o aluno para carregar os dados:", sorted(df_alunos['exibicao_gestao'].tolist()), key=f"sel_edit_al_{st.session_state.al_form_id}")
-                    nome_puro_edit = sel_a_visual.split(" - ")[0]
-                    al_edit = df_alunos[df_alunos['aluno'] == nome_puro_edit].iloc[0]
-                
-                # O formulário ganha uma key que muda a cada salvamento
-                with st.form(key=f"f_aluno_{st.session_state.al_form_id}"):
-                    reg = st.text_input("Registro (ID)", value=al_edit['registro'] if al_edit is not None else "")
-                    nom = st.text_input("Nome Completo", value=al_edit['aluno'] if al_edit is not None else "")
+                    df_alunos['ex_g'] = df_alunos['aluno'] + " - " + df_alunos['turma']
+                    sel_a_g = st.selectbox("Escolha:", sorted(df_alunos['ex_g'].tolist()), key=f"sag_{st.session_state.al_form_id}")
+                    al_edit = df_alunos[df_alunos['aluno'] == sel_a_g.split(" - ")[0]].iloc[0]
+                with st.form(key=f"f_al_{st.session_state.al_form_id}"):
+                    reg = st.text_input("Registro", value=al_edit['registro'] if al_edit is not None else "")
+                    nom = st.text_input("Nome", value=al_edit['aluno'] if al_edit is not None else "")
                     tur = st.text_input("Turma", value=al_edit['turma'] if al_edit is not None else "")
-                    nec = st.text_area("Condição/Deficiência", value=al_edit['necessidades'] if al_edit is not None else "")
-                    nas = st.text_input("Nascimento (DD/MM/AAAA)", value=al_edit['data_nascimento'] if al_edit is not None else "")
-                    obs = st.text_area("Observações Perfil", value=al_edit['observacoes_gerais'] if al_edit is not None else "")
-                    ft_p = st.file_uploader("Foto Perfil", type=['png', 'jpg', 'jpeg'])
-                    
+                    nec = st.text_area("Condição", value=al_edit['necessidades'] if al_edit is not None else "")
+                    nas = st.text_input("Nascimento", value=al_edit['data_nascimento'] if al_edit is not None else "")
+                    obs = st.text_area("Observações", value=al_edit['observacoes_gerais'] if al_edit is not None else "")
+                    ft_p = st.file_uploader("Foto Perfil")
                     c1, c2 = st.columns(2)
-                    
-                    if c1.form_submit_button("💾 Salvar Perfil"):
-                        if modo_a == "Novo" and not df_alunos[df_alunos['registro'] == reg].empty:
-                            st.error("⚠️ Este Registro já existe!"); st.stop()
-                        
+                    if c1.form_submit_button("Salvar Perfil"):
                         p_path = al_edit['foto_path'] if al_edit is not None else ""
                         if ft_p:
                             p_path = f"perfil_{reg}.png"
                             supabase.storage.from_("fotos_perfil").upload(p_path, ft_p.getvalue(), {"upsert": "true"})
-                        
-                        supabase.table("estudantes").upsert({
-                            "registro": reg, "aluno": nom, "turma": tur, 
-                            "necessidades": nec, "data_nascimento": nas, 
-                            "observacoes_gerais": obs, "foto_path": p_path
-                        }).execute()
-                        
-                        st.toast("✅ Perfil salvo com sucesso!")
-                        # --- O PULO DO GATO: Incrementa o ID e reinicia ---
-                        st.session_state.al_form_id += 1
-                        time.sleep(1)
-                        st.rerun()
-
+                        supabase.table("estudantes").upsert({"registro": reg, "aluno": nom, "turma": tur, "necessidades": nec, "data_nascimento": nas, "observacoes_gerais": obs, "foto_path": p_path}).execute()
+                        st.toast("✅ Aluno salvo!"); st.session_state.al_form_id += 1; time.sleep(1); st.rerun()
                     if modo_a == "Editar/Excluir" and c2.form_submit_button("❌ EXCLUIR ALUNO"):
-                        if al_edit['foto_path']: 
-                            supabase.storage.from_("fotos_perfil").remove([al_edit['foto_path']])
+                        if al_edit['foto_path']: supabase.storage.from_("fotos_perfil").remove([al_edit['foto_path']])
                         supabase.table("estudantes").delete().eq("registro", al_edit['registro']).execute()
-                        
-                        st.toast("⚠️ Aluno removido!")
-                        st.session_state.al_form_id += 1
-                        time.sleep(1)
-                        st.rerun()
+                        st.session_state.al_form_id += 1; time.sleep(1); st.rerun()
 
-                    if modo_a == "Editar/Excluir" and c2.form_submit_button("❌ EXCLUIR ALUNO"):
-                        if al_edit['foto_path']: 
-                            supabase.storage.from_("fotos_perfil").remove([al_edit['foto_path']])
-                        supabase.table("estudantes").delete().eq("registro", al_edit['registro']).execute()
-                        
-                        st.toast("⚠️ Aluno removido!")
-                        st.session_state.al_form_id += 1
-                        time.sleep(1)
-                        st.rerun()
-
-            with abas[2]: # GESTÃO DE PROFESSORES
-                st.subheader("Gerenciar Usuários")
+            with abas[3]: # GESTÃO DE PROFESSORES
+                st.subheader("Gerenciar Professores")
                 if "p_form_id" not in st.session_state: st.session_state.p_form_id = 0
-                modo_p = st.radio("Ação:", ["Novo", "Editar/Excluir"], horizontal=True, key=f"mp_{st.session_state.p_form_id}")
+                modo_p = st.radio("Ação Professor:", ["Novo", "Editar/Excluir"], horizontal=True, key=f"mp_{st.session_state.p_form_id}")
                 perfis_op = ["professor", "paee", "direcao", "coordenador"]
                 if st.session_state.u_perfil == "gestao": perfis_op.append("gestao")
-                
                 if modo_p == "Novo":
                     with st.form(key=f"fn_{st.session_state.p_form_id}"):
-                        nr = st.text_input("RF")
-                        nn = st.text_input("Nome")
-                        np = st.selectbox("Perfil", perfis_op)
-                        if st.form_submit_button("Cadastrar Professor"):
-                            if not nr or not nn:
-                                st.error("Preencha o RF e o Nome.")
-                            elif not df_prof[df_prof['rf'] == nr].empty:
-                                st.error("⚠️ Este RF já está cadastrado!")
-                            else:
-                                supabase.table("professores").insert({"rf": nr, "nome": nn, "perfil": np}).execute()
-                                st.toast("✅ Professor cadastrado!")
-                                st.session_state.p_form_id += 1
-                                time.sleep(1); st.rerun()
+                        nr, nn = st.text_input("RF"), st.text_input("Nome"); np = st.selectbox("Perfil", perfis_op)
+                        if st.form_submit_button("Cadastrar"):
+                            if not df_prof[df_prof['rf'] == nr].empty: st.error("RF já existe!"); st.stop()
+                            supabase.table("professores").insert({"rf": nr, "nome": nn, "perfil": np}).execute()
+                            st.toast("✅ Cadastrado!"); st.session_state.p_form_id += 1; time.sleep(1); st.rerun()
                 else:
                     l_edit = sorted(df_prof['nome'].tolist()) if st.session_state.u_perfil == "gestao" else sorted(df_prof[df_prof['perfil'] != 'gestao']['nome'].tolist())
-                    if not l_edit: st.info("Sem professores para edição.")
-                    else:
-                        psn = st.selectbox("Professor para editar:", l_edit)
-                        psd = df_prof[df_prof['nome'] == psn].iloc[0]
-                        with st.form(f"fe_{psn}"):
-                            st.text_input("RF (Fixo)", value=psd['rf'], disabled=True)
-                            en, ep = st.text_input("Nome", value=psd['nome']), st.selectbox("Perfil", perfis_op, index=perfis_op.index(psd['perfil']) if psd['perfil'] in perfis_op else 0)
-                            c_b1, c_b2 = st.columns(2)
-                            if c_b1.form_submit_button("Atualizar"): supabase.table("professores").update({"nome": en, "perfil": ep}).eq("rf", psd['rf']).execute(); st.rerun()
-                            if c_b2.form_submit_button("❌ EXCLUIR"):
-                                supabase.table("professores").delete().eq("rf", psd['rf']).execute(); st.rerun()
+                    psn = st.selectbox("Selecionar:", l_edit)
+                    psd = df_prof[df_prof['nome'] == psn].iloc[0]
+                    with st.form(f"fe_{psn}"):
+                        en, ep = st.text_input("Nome", value=psd['nome']), st.selectbox("Perfil", perfis_op, index=perfis_op.index(psd['perfil']) if psd['perfil'] in perfis_op else 0)
+                        c_b1, c_b2 = st.columns(2)
+                        if c_b1.form_submit_button("Atualizar"): supabase.table("professores").update({"nome": en, "perfil": ep}).eq("rf", psd['rf']).execute(); st.rerun()
+                        if c_b2.form_submit_button("Excluir"):
+                            supabase.table("professores").delete().eq("rf", psd['rf']).execute()
+                            supabase.table("credenciais").delete().eq("rf", psd['rf']).execute(); st.rerun()
 
-            with abas[3]: # SEGURANÇA E MONITORAMENTO
-                st.subheader("Ferramentas de Gestão")
-                col_s1, col_s2 = st.columns(2)
-                with col_s1:
-                    l_reset = sorted(df_prof['nome'].tolist()) if st.session_state.u_perfil == "gestao" else sorted(df_prof[df_prof['perfil'] != 'gestao']['nome'].tolist())
-                    pr = st.selectbox("Resetar Professor:", l_reset, key="rs")
-                    if st.button("Resetar Senha"):
-                        rr = df_prof[df_prof['nome'] == pr].iloc[0]['rf']
-                        supabase.table("credenciais").delete().eq("rf", rr).execute(); st.warning("Resetado.")
-                    
-                    st.divider()
-                    if st.button("📊 Gerar Relatório de Monitoramento"):
-                        r_rels = supabase.table("relatorios").select("*").execute()
-                        if r_rels.data:
-                            m = pd.DataFrame(r_rels.data).merge(df_prof[['rf', 'nome']], left_on='rf_professor', right_on='rf', how='left').merge(df_alunos[['registro', 'aluno', 'turma']], left_on='registro_aluno', right_on='registro', how='left')
+            with abas[4]: # SEGURANÇA E RESET
+                st.subheader("Segurança e Monitoramento")
+                col1, col2 = st.columns(2)
+                with col1:
+                    pr = st.selectbox("Resetar Professor:", sorted(df_prof[df_prof['perfil'] != 'gestao']['nome'].tolist()) if st.session_state.u_perfil != "gestao" else sorted(df_prof['nome'].tolist()))
+                    if st.button("Resetar Senha"): supabase.table("credenciais").delete().eq("rf", df_prof[df_prof['nome'] == pr].iloc[0]['rf']).execute(); st.warning("Resetado.")
+                    if st.button("📊 Monitoramento Excel"):
+                        all_r = pd.DataFrame(supabase.table("relatorios").select("*").execute().data)
+                        if not all_r.empty:
+                            m = all_r.merge(df_prof[['rf', 'nome']], left_on='rf_professor', right_on='rf', how='left').merge(df_alunos[['registro', 'aluno', 'turma']], left_on='registro_aluno', right_on='registro', how='left')
                             m = m[['nome_y', 'aluno', 'turma', 'data', 'bimestre']]; m.columns = ['Professor', 'Aluno', 'Turma', 'Data', 'Bimestre']
                             out = BytesIO(); m.to_excel(out, index=False); st.download_button("Download Excel", out.getvalue(), "monitor.xlsx")
-                with col_s2:
+                with col2:
                     if st.session_state.u_perfil == "gestao":
                         st.error("🚨 RESET TOTAL")
                         if st.button("🚨 ZERAR TUDO"): st.session_state.conf_res = True
-                        if st.session_state.get("conf_res") and st.button("SIM, APAGAR SISTEMA"):
-                            supabase.table("relatorios").delete().neq("id", -1).execute()
-                            supabase.table("logs").delete().neq("id", -1).execute()
-                            supabase.table("credenciais").delete().neq("rf", "xxx").execute()
-                            supabase.table("estudantes").delete().neq("registro", "xxx").execute()
-                            supabase.table("professores").delete().neq("rf", "xxx").execute()
+                        if st.session_state.get("conf_res") and st.button("CONFIRMAR APAGAMENTO"):
+                            for t in ["relatorios", "logs", "credenciais", "estudantes", "professores"]:
+                                col_pk = "id" if t in ["relatorios", "logs"] else ("rf" if t in ["professores", "credenciais"] else "registro")
+                                supabase.table(t).delete().neq(col_pk, "xxx").execute()
                             st.session_state.logged_in = False; st.rerun()
